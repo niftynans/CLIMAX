@@ -456,7 +456,7 @@ class LimeTabularExplainer(object):
             (ret_exp.intercept[label],
              ret_exp.local_exp[label],
              ret_exp.score[label],
-             ret_exp.local_pred[label]) = self.base.explain_instance_with_data(
+             ret_exp.local_pred[label]) = self.base.if_explain_instance_with_data(
                     scaled_data,
                     yss,
                     distances,
@@ -464,6 +464,18 @@ class LimeTabularExplainer(object):
                     num_features,
                     model_regressor=model_regressor,
                     feature_selection=self.feature_selection)
+
+            # (ret_exp.intercept[label],
+            #             ret_exp.local_exp[label],
+            #             ret_exp.score[label],
+            #             ret_exp.local_pred[label]) = self.base.explain_instance_with_data(
+            #                     scaled_data,
+            #                     yss,
+            #                     distances,
+            #                     label,
+            #                     num_features,
+            #                     model_regressor=model_regressor,
+            #                     feature_selection=self.feature_selection)
 
         if self.mode == "regression":
             ret_exp.intercept[1] = ret_exp.intercept[0]
