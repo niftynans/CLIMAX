@@ -1142,7 +1142,6 @@ class LimeTabularExplainer(object):
             ret_exp.max_value = max_y
             labels = [0]
         for label in labels:
-            print(label)
             (ret_exp.intercept[label],
              ret_exp.local_exp[label],
              ret_exp.score[label],

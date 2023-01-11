@@ -14,7 +14,6 @@ from tqdm.auto import tqdm
 from . import lime_base
 from .wrappers.scikit_image import SegmentationAlgorithm
 
-
 class ImageExplanation(object):
     def __init__(self, image, segments):
         """Init function.

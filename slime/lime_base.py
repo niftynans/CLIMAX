@@ -427,10 +427,6 @@ class LimeBase(object):
         neighborhood_data = neighborhood_data[sb_idx]
         labels_column = labels_column[sb_idx]
         weights = weights[sb_idx]
-
-
-        from collections import Counter
-        print(Counter(labels_column))
         
         used_features = self.feature_selection(neighborhood_data,
                                                labels_column,
