@@ -124,6 +124,7 @@ class LimeTabularExplainer(object):
     explained."""
 
     def __init__(self,
+                 bbox_model,
                  training_data,
                  mode="classification",
                  training_labels=None,
@@ -191,6 +192,7 @@ class LimeTabularExplainer(object):
         self.categorical_names = categorical_names or {}
         self.sample_around_instance = sample_around_instance
         self.training_data_stats = training_data_stats
+        self.bbox_model = bbox_model
 
         # Check and raise proper error in stats are supplied in non-descritized path
         if self.training_data_stats:
@@ -1001,6 +1003,7 @@ class LimeTabularExplainer(object):
              ret_exp.local_exp[label],
              ret_exp.score[label],
              ret_exp.local_pred[label]) = self.base.if_explain_instance_with_data(
+                    self.bbox_model,
                     scaled_data,
                     yss,
                     distances,

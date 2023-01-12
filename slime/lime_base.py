@@ -332,6 +332,7 @@ class LimeBase(object):
                 prediction_score, local_pred, used_features, test_result)
 
     def if_explain_instance_with_data(self,
+                                    bbox_model,
                                    neighborhood_data,
                                    neighborhood_labels,
                                    distances,
@@ -342,92 +343,97 @@ class LimeBase(object):
 
         weights = self.kernel_fn(distances)
         labels_column = neighborhood_labels[:, label]
-        y = np.round_(labels_column)
+        # y = bbox_model.predict(neighborhood_data)
 
-        X_train, X_test, y_train, y_test = train_test_split(neighborhood_data, y, random_state=104, test_size=0.20, shuffle=True)
-        X_train, X_va, y_train, y_va = train_test_split(X_train, y_train, test_size = 0.2)
+        # from collections import Counter
+        # print("Y looks like: ", Counter(y))
 
-        sigmoid_k = 10
-        C = 0.1
-        sample_ratio = 0.6        
-        num_tr_sample = X_train.shape[0]
+        # y = np.round_(labels_column)
 
-        flip_ratio = 0.4
-        idxs = np.arange(y_train.shape[0])
-        np.random.shuffle(idxs)
-        num_flip = int(flip_ratio * len(idxs))
-        y_train[idxs[:num_flip]] = np.logical_xor(np.ones(num_flip), y_train[idxs[:num_flip]]).astype(int)
+        # X_train, X_va, y_train, y_va = train_test_split(neighborhood_data, y, random_state=104, test_size=0.20, shuffle=True)
+        # # X_train, X_va, y_train, y_va = train_test_split(X_train, y_train, test_size = 0.2)
+
+        # sigmoid_k = 10
+        # C = 0.1
+        # sample_ratio = 0.6        
+        # num_tr_sample = X_train.shape[0]
+
+        # flip_ratio = 0.4
+        # idxs = np.arange(y_train.shape[0])
+        # np.random.shuffle(idxs)
+        # num_flip = int(flip_ratio * len(idxs))
+        # y_train[idxs[:num_flip]] = np.logical_xor(np.ones(num_flip), y_train[idxs[:num_flip]]).astype(int)
 
 
-        clf = LogisticRegression(
-                C = C,
-                fit_intercept=False,
-                tol = 1e-8,
-                solver="liblinear",
-                multi_class="ovr",
-                max_iter=100,
-                warm_start=False,
-                verbose=0,
-                )
+        # clf = LogisticRegression(
+        #         C = C,
+        #         fit_intercept=False,
+        #         tol = 1e-8,
+        #         solver="liblinear",
+        #         multi_class="ovr",
+        #         max_iter=100,
+        #         warm_start=False,
+        #         verbose=0,
+        #         )
 
-        clf.fit(X_train,y_train)
-        y_va_pred = clf.predict_proba(X_va)[:,1]
-        weight_ar = clf.coef_.flatten()
-        test_grad_loss_val = grad_logloss_theta_lr(y_va,y_va_pred,X_va,weight_ar,C,False,0.1/(num_tr_sample*C))
-        tr_pred = clf.predict_proba(X_train)[:,1]
-        batch_size = 64
+        # clf.fit(X_train,y_train)
+        # y_va_pred = clf.predict_proba(X_va)[:,1]
+        # weight_ar = clf.coef_.flatten()
+        # test_grad_loss_val = grad_logloss_theta_lr(y_va,y_va_pred,X_va,weight_ar,C,False,0.1/(num_tr_sample*C))
+        # tr_pred = clf.predict_proba(X_train)[:,1]
+        # batch_size = 64
 
-        M = None
-        total_batch = int(np.ceil(num_tr_sample / float(batch_size)))
-        for idx in range(total_batch):
-            batch_tr_grad = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
-                tr_pred[idx*batch_size:(idx+1)*batch_size],
-                X_train[idx*batch_size:(idx+1)*batch_size],
-                weight_ar,
-                C,
-                False,
-                1.0)
+        # M = None
+        # total_batch = int(np.ceil(num_tr_sample / float(batch_size)))
+        # for idx in range(total_batch):
+        #     batch_tr_grad = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
+        #         tr_pred[idx*batch_size:(idx+1)*batch_size],
+        #         X_train[idx*batch_size:(idx+1)*batch_size],
+        #         weight_ar,
+        #         C,
+        #         False,
+        #         1.0)
 
-            sum_grad = batch_tr_grad.multiply(X_train[idx*batch_size:(idx+1)*batch_size]).sum(0)
-            if M is None:
-                M = sum_grad
-            else:
-                M = M + sum_grad
+        #     sum_grad = batch_tr_grad.multiply(X_train[idx*batch_size:(idx+1)*batch_size]).sum(0)
+        #     if M is None:
+        #         M = sum_grad
+        #     else:
+        #         M = M + sum_grad
 
-        M = M + 0.1/(num_tr_sample*C) * np.ones(X_train.shape[1])
-        M = np.array(M).flatten()
-        iv_hvp = inverse_hvp_lr_newtonCG(X_train,y_train,tr_pred,test_grad_loss_val,C,True,1e-5,True,M,0.1/(num_tr_sample*C))
-        total_batch = int(np.ceil(X_train.shape[0] / float(batch_size)))
-        predicted_loss_diff = []
+        # M = M + 0.1/(num_tr_sample*C) * np.ones(X_train.shape[1])
+        # M = np.array(M).flatten()
+        # iv_hvp = inverse_hvp_lr_newtonCG(X_train,y_train,tr_pred,test_grad_loss_val,C,True,1e-5,True,M,0.1/(num_tr_sample*C))
+        # total_batch = int(np.ceil(X_train.shape[0] / float(batch_size)))
+        # predicted_loss_diff = []
 
-        for idx in range(total_batch):
-            train_grad_loss_val = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
-                tr_pred[idx*batch_size:(idx+1)*batch_size],
-                X_train[idx*batch_size:(idx+1)*batch_size],
-                weight_ar,
-                C,
-                False,
-                1.0)
-            predicted_loss_diff.extend(np.array(train_grad_loss_val.dot(iv_hvp)).flatten())
+        # for idx in range(total_batch):
+        #     train_grad_loss_val = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
+        #         tr_pred[idx*batch_size:(idx+1)*batch_size],
+        #         X_train[idx*batch_size:(idx+1)*batch_size],
+        #         weight_ar,
+        #         C,
+        #         False,
+        #         1.0)
+        #     predicted_loss_diff.extend(np.array(train_grad_loss_val.dot(iv_hvp)).flatten())
 
-        predicted_loss_diffs = np.asarray(predicted_loss_diff)        
-        phi_ar = - predicted_loss_diffs
-        IF_interval = phi_ar.max() - phi_ar.min()
-        a_param = sigmoid_k / IF_interval
-        prob_pi = 1 / (1 + np.exp(a_param * phi_ar))
-        pos_idx = select_from_one_class(y_train,prob_pi,1,sample_ratio)
-        neg_idx = select_from_one_class(y_train,prob_pi,0,sample_ratio)
-        sb_idx = np.union1d(pos_idx,neg_idx)
-        sb_x_train = X_train[sb_idx]
-        sb_y_train = y_train[sb_idx]
+        # predicted_loss_diffs = np.asarray(predicted_loss_diff)        
+        # phi_ar = - predicted_loss_diffs
+        # IF_interval = phi_ar.max() - phi_ar.min()
+        # a_param = sigmoid_k / IF_interval
+        # prob_pi = 1 / (1 + np.exp(a_param * phi_ar))
+        # pos_idx = select_from_one_class(y_train,prob_pi,1,sample_ratio)
+        # neg_idx = select_from_one_class(y_train,prob_pi,0,sample_ratio)
+        # sb_idx = np.union1d(pos_idx,neg_idx)
+        # sb_x_train = X_train[sb_idx]
+        # sb_y_train = y_train[sb_idx]
 
-        clf.fit(sb_x_train,sb_y_train)
-        y_va_pred = clf.predict_proba(X_va)[:,1]
+        # clf.fit(sb_x_train,sb_y_train)
+        # y_va_pred = clf.predict_proba(X_va)[:,1]
 
-        neighborhood_data = neighborhood_data[sb_idx]
-        labels_column = labels_column[sb_idx]
-        weights = weights[sb_idx]
-        
+        # neighborhood_data = neighborhood_data[sb_idx]
+        # labels_column = labels_column[sb_idx]
+        # weights = weights[sb_idx]
+
         used_features = self.feature_selection(neighborhood_data,
                                                labels_column,
                                                weights,
