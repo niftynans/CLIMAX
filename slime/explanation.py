@@ -137,13 +137,26 @@ class Explanation(object):
             list of tuples (representation, weight), where representation is
             given by domain_mapper. Weight is a float.
         """
+        print("In as_list")
         print("Label: ", label)
         label_to_use = label if self.mode == "classification" else self.dummy_label
         print("Label to use: ", label_to_use)
         ans = self.domain_mapper.map_exp_ids(self.local_exp[label_to_use], **kwargs)
-        print("Ans: ", ans)
-        # ans = [(x[0], float(x[1])) for x in ans]
-        # print("Simplified Ans: ", ans)
+        ans = [(x[0], float(x[1])) for x in ans]
+        print("Simplified Ans: ", ans)
+        return ans
+
+    def if_as_list(self, label=1, **kwargs):
+        print("In if_as_list")
+        print("Label: ", label)
+        label_to_use = label if self.mode == "classification" else self.dummy_label
+        print("Label to use: ", label_to_use)
+        ans = self.domain_mapper.map_exp_ids(self.local_exp[label_to_use], **kwargs)
+        print(max(ans[0][1]))
+        new_ans = []
+        for i in range(len(ans)):
+            new_ans.append((ans[0][0], max(ans[0][1])))
+        print("Simplified Ans: ", new_ans)
         return ans
 
     def as_map(self):
@@ -196,11 +209,24 @@ class Explanation(object):
         This will throw an error if you don't have IPython installed"""
 
         from IPython.core.display import display, HTML
+        print("In show_in_notebook.")
         # print("Labels: ", labels)
         # print("Predict_Proba: ", predict_proba)
         # print("Show Predicted Value: ", show_predicted_value)
         
         display(HTML(self.as_html(labels=labels,
+                                  predict_proba=predict_proba,
+                                  show_predicted_value=show_predicted_value,
+                                  **kwargs)))
+
+    def if_show_in_notebook(self,
+                         labels=None,
+                         predict_proba=True,
+                         show_predicted_value=True,
+                         **kwargs):
+        from IPython.core.display import display, HTML
+        print("In if_show_in_notebook.")        
+        display(HTML(self.if_as_html(labels=labels,
                                   predict_proba=predict_proba,
                                   show_predicted_value=show_predicted_value,
                                   **kwargs)))
@@ -247,6 +273,7 @@ class Explanation(object):
         Returns:
             code for an html page, including javascript includes.
         """
+        print("In as_html")
         print("Labels: ", labels)
         print("Predict_Proba: ", predict_proba)
         print("Show Predicted Value: ", show_predicted_value)
@@ -305,6 +332,101 @@ class Explanation(object):
                 ''' % (exp, label)
         else:
             exp = jsonize(self.as_list())
+            exp_js += u'''
+            exp_div = top_div.append('div').classed('lime explanation', true);
+            exp.show(%s, %s, exp_div);
+            ''' % (exp, self.dummy_label)
+
+        raw_js = '''var raw_div = top_div.append('div');'''
+
+        if self.mode == "classification":
+            html_data = self.local_exp[labels[0]]
+        else:
+            html_data = self.local_exp[self.dummy_label]
+
+        raw_js += self.domain_mapper.visualize_instance_html(
+                html_data,
+                labels[0] if self.mode == "classification" else self.dummy_label,
+                'raw_div',
+                'exp',
+                **kwargs)
+        out += u'''
+        <script>
+        var top_div = d3.select('#top_div%s').classed('lime top_div', true);
+        %s
+        %s
+        %s
+        %s
+        </script>
+        ''' % (random_id, predict_proba_js, predict_value_js, exp_js, raw_js)
+        out += u'</body></html>'
+
+        return out
+
+    def if_as_html(self,
+                labels=None,
+                predict_proba=True,
+                show_predicted_value=True,
+                **kwargs):
+        print("In if_as_html")
+        print("Labels: ", labels)
+        print("Predict_Proba: ", predict_proba)
+        print("Show Predicted Value: ", show_predicted_value)
+        
+        def jsonize(x):
+            return json.dumps(x, ensure_ascii=False)
+
+        if labels is None and self.mode == "classification":
+            labels = self.available_labels()
+
+        this_dir, _ = os.path.split(__file__)
+        bundle = open(os.path.join(this_dir, 'bundle.js'),
+                      encoding="utf8").read()
+
+        out = u'''<html>
+        <meta http-equiv="content-type" content="text/html; charset=UTF8">
+        <head><script>%s </script></head><body>''' % bundle
+        random_id = id_generator(size=15, random_state=check_random_state(self.random_state))
+        out += u'''
+        <div class="lime top_div" id="top_div%s"></div>
+        ''' % random_id
+
+        predict_proba_js = ''
+        if self.mode == "classification" and predict_proba:
+            predict_proba_js = u'''
+            var pp_div = top_div.append('div')
+                                .classed('lime predict_proba', true);
+            var pp_svg = pp_div.append('svg').style('width', '100%%');
+            var pp = new lime.PredictProba(pp_svg, %s, %s);
+            ''' % (jsonize([str(x) for x in self.class_names]),
+                   jsonize(list(self.predict_proba.astype(float))))
+
+        predict_value_js = ''
+        if self.mode == "regression" and show_predicted_value:
+            # reference self.predicted_value
+            # (svg, predicted_value, min_value, max_value)
+            predict_value_js = u'''
+                    var pp_div = top_div.append('div')
+                                        .classed('lime predicted_value', true);
+                    var pp_svg = pp_div.append('svg').style('width', '100%%');
+                    var pp = new lime.PredictedValue(pp_svg, %s, %s, %s);
+                    ''' % (jsonize(float(self.predicted_value)),
+                           jsonize(float(self.min_value)),
+                           jsonize(float(self.max_value)))
+
+        exp_js = '''var exp_div;
+            var exp = new lime.Explanation(%s);
+        ''' % (jsonize([str(x) for x in self.class_names]))
+
+        if self.mode == "classification":
+            for label in labels:
+                exp = jsonize(self.if_as_list(label))
+                exp_js += u'''
+                exp_div = top_div.append('div').classed('lime explanation', true);
+                exp.show(%s, %d, exp_div);
+                ''' % (exp, label)
+        else:
+            exp = jsonize(self.if_as_list())
             exp_js += u'''
             exp_div = top_div.append('div').classed('lime explanation', true);
             exp.show(%s, %s, exp_div);
