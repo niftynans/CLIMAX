@@ -137,9 +137,13 @@ class Explanation(object):
             list of tuples (representation, weight), where representation is
             given by domain_mapper. Weight is a float.
         """
+        print("Label: ", label)
         label_to_use = label if self.mode == "classification" else self.dummy_label
+        print("Label to use: ", label_to_use)
         ans = self.domain_mapper.map_exp_ids(self.local_exp[label_to_use], **kwargs)
-        ans = [(x[0], float(x[1])) for x in ans]
+        print("Ans: ", ans)
+        # ans = [(x[0], float(x[1])) for x in ans]
+        # print("Simplified Ans: ", ans)
         return ans
 
     def as_map(self):
@@ -192,6 +196,10 @@ class Explanation(object):
         This will throw an error if you don't have IPython installed"""
 
         from IPython.core.display import display, HTML
+        # print("Labels: ", labels)
+        # print("Predict_Proba: ", predict_proba)
+        # print("Show Predicted Value: ", show_predicted_value)
+        
         display(HTML(self.as_html(labels=labels,
                                   predict_proba=predict_proba,
                                   show_predicted_value=show_predicted_value,
@@ -239,7 +247,10 @@ class Explanation(object):
         Returns:
             code for an html page, including javascript includes.
         """
-
+        print("Labels: ", labels)
+        print("Predict_Proba: ", predict_proba)
+        print("Show Predicted Value: ", show_predicted_value)
+        
         def jsonize(x):
             return json.dumps(x, ensure_ascii=False)
 

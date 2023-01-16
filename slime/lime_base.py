@@ -17,6 +17,7 @@ from grad_utils import grad_logloss_theta_lr
 from grad_utils import batch_grad_logloss_lr
 from inverse_hvp import inverse_hvp_lr_newtonCG
 from dataset import select_from_one_class
+from collections import Counter
 
 
 class LimeBase(object):
@@ -225,7 +226,7 @@ class LimeBase(object):
             score is the R^2 value of the returned explanation
             local_pred is the prediction of the explanation model on the original instance
         """
-
+        self.verbose = True
 
         weights = self.kernel_fn(distances)
         labels_column = neighborhood_labels[:, label]
@@ -246,10 +247,12 @@ class LimeBase(object):
 
         local_pred = easy_model.predict(neighborhood_data[0, used_features].reshape(1, -1))
 
+        print("Prediction Score: ", prediction_score)
+        print("Local Predictions: ", local_pred)
         if self.verbose:
-            print('Intercept', easy_model.intercept_)
-            print('Prediction_local', local_pred,)
-            print('Right:', neighborhood_labels[0, label])
+            print('Intercept: ', easy_model.intercept_)
+            print('Prediction_local: ', local_pred,)
+            print('Right: ', neighborhood_labels[0, label])
         return (easy_model.intercept_,
                 sorted(zip(used_features, easy_model.coef_),
                        key=lambda x: np.abs(x[1]), reverse=True),
@@ -341,40 +344,39 @@ class LimeBase(object):
                                    feature_selection='auto',
                                    model_regressor=None):
 
+        self.verbose = True
+        
         weights = self.kernel_fn(distances)
         labels_column = neighborhood_labels[:, label]
-        # y = bbox_model.predict(neighborhood_data)
+        y = (np.rint(labels_column)).astype(int)
 
-        # from collections import Counter
-        # print("Y looks like: ", Counter(y))
+        print(Counter(y)) 
 
-        # y = np.round_(labels_column)
-
-        # X_train, X_va, y_train, y_va = train_test_split(neighborhood_data, y, random_state=104, test_size=0.20, shuffle=True)
-        # # X_train, X_va, y_train, y_va = train_test_split(X_train, y_train, test_size = 0.2)
+        X_train, X_va, y_train, y_va = train_test_split(neighborhood_data, y, random_state=104, test_size=0.20, shuffle=True)
+        # X_train, X_va, y_train, y_va = train_test_split(X_train, y_train, test_size = 0.2)
 
         # sigmoid_k = 10
-        # C = 0.1
+        C = 0.1
         # sample_ratio = 0.6        
         # num_tr_sample = X_train.shape[0]
-
-        # flip_ratio = 0.4
+       
+        # flip_ratio = 0.1
         # idxs = np.arange(y_train.shape[0])
         # np.random.shuffle(idxs)
         # num_flip = int(flip_ratio * len(idxs))
         # y_train[idxs[:num_flip]] = np.logical_xor(np.ones(num_flip), y_train[idxs[:num_flip]]).astype(int)
 
 
-        # clf = LogisticRegression(
-        #         C = C,
-        #         fit_intercept=False,
-        #         tol = 1e-8,
-        #         solver="liblinear",
-        #         multi_class="ovr",
-        #         max_iter=100,
-        #         warm_start=False,
-        #         verbose=0,
-        #         )
+        clf = LogisticRegression(
+                C = C,
+                fit_intercept=False,
+                tol = 1e-8,
+                solver="liblinear",
+                multi_class="ovr",
+                max_iter=100,
+                warm_start=False,
+                verbose=0,
+                )
 
         # clf.fit(X_train,y_train)
         # y_va_pred = clf.predict_proba(X_va)[:,1]
@@ -439,17 +441,20 @@ class LimeBase(object):
                                                weights,
                                                num_features,
                                                feature_selection)
-        if model_regressor is None:
-            model_regressor = Ridge(alpha=1, fit_intercept=True,
-                                    random_state=self.random_state)
-        easy_model = model_regressor
+        
+        easy_model = clf
+        y = (np.rint(labels_column)).astype(int)
+
         easy_model.fit(neighborhood_data[:, used_features],
-                       labels_column, sample_weight=weights)
+                       y, sample_weight=weights)
         prediction_score = easy_model.score(
             neighborhood_data[:, used_features],
-            labels_column, sample_weight=weights)
+            y, sample_weight=weights)
 
         local_pred = easy_model.predict(neighborhood_data[0, used_features].reshape(1, -1))
+
+        print("Prediction Score: ", prediction_score)
+        print("Local Predictions: ", local_pred)
 
         if self.verbose:
             print('Intercept', easy_model.intercept_)
