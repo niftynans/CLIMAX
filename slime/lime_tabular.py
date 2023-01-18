@@ -1009,6 +1009,7 @@ class LimeTabularExplainer(object):
                     distances,
                     label,
                     num_features,
+                    num_samples,
                     model_regressor=model_regressor,
                     feature_selection=self.feature_selection)
 
@@ -1016,7 +1017,6 @@ class LimeTabularExplainer(object):
             ret_exp.intercept[1] = ret_exp.intercept[0]
             ret_exp.local_exp[1] = [x for x in ret_exp.local_exp[0]]
             ret_exp.local_exp[0] = [(i, -1 * j) for i, j in ret_exp.local_exp[1]]
-
         return ret_exp
 
 

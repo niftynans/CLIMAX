@@ -3,6 +3,7 @@ Contains abstract functionality for learning locally linear sparse model.
 """
 import numpy as np
 import scipy as sp
+import pandas as pd
 import sklearn
 from sklearn.linear_model import Ridge
 from slime_lm._least_angle import lars_path
@@ -10,6 +11,7 @@ from sklearn.utils import check_random_state
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, log_loss
+from sklearn.metrics import recall_score, precision_score
 
 import sys
 sys.path.append('../..')
@@ -18,7 +20,11 @@ from grad_utils import batch_grad_logloss_lr
 from inverse_hvp import inverse_hvp_lr_newtonCG
 from dataset import select_from_one_class
 from collections import Counter
-
+import dice_ml
+from dice_ml.utils import helpers
+import jsonschema
+import tensorflow as tf
+import h5py
 
 class LimeBase(object):
     """Class for learning a locally linear sparse model from perturbed data"""
@@ -226,8 +232,6 @@ class LimeBase(object):
             score is the R^2 value of the returned explanation
             local_pred is the prediction of the explanation model on the original instance
         """
-        self.verbose = True
-
         weights = self.kernel_fn(distances)
         labels_column = neighborhood_labels[:, label]
         used_features = self.feature_selection(neighborhood_data,
@@ -247,8 +251,6 @@ class LimeBase(object):
 
         local_pred = easy_model.predict(neighborhood_data[0, used_features].reshape(1, -1))
 
-        print("Prediction Score: ", prediction_score)
-        print("Local Predictions: ", local_pred)
         if self.verbose:
             print('Intercept: ', easy_model.intercept_)
             print('Prediction_local: ', local_pred,)
@@ -341,100 +343,117 @@ class LimeBase(object):
                                    distances,
                                    label,
                                    num_features,
+                                   num_samples,
                                    feature_selection='auto',
                                    model_regressor=None):
-
-        self.verbose = True
         
         weights = self.kernel_fn(distances)
         labels_column = neighborhood_labels[:, label]
         y = (np.rint(labels_column)).astype(int)
-
-        print(Counter(y)) 
-
+        
+        print(Counter(y))
+        cols = []
+        for i in range(neighborhood_data.shape[1]):
+            cols.append(i)
+        df = pd.DataFrame(neighborhood_data)
+        df1 = df.copy()
+        df['target'] = y
+        zero_counts = 0
+        one_counts = 0
+        for elem in y:
+            if elem == 0:
+                zero_counts += 1
+            else:
+                one_counts += 1
+        if zero_counts == num_samples or one_counts == num_samples:
+                    flip_ratio = 0.1
+                    idxs = np.arange(len(y))
+                    np.random.shuffle(idxs)
+                    num_flip = int(flip_ratio * len(idxs))
+                    y[idxs[:num_flip]] = np.logical_xor(np.ones(num_flip), y[idxs[:num_flip]]).astype(int)
+                    print(Counter(y))
         X_train, X_va, y_train, y_va = train_test_split(neighborhood_data, y, random_state=104, test_size=0.20, shuffle=True)
-        # X_train, X_va, y_train, y_va = train_test_split(X_train, y_train, test_size = 0.2)
-
-        # sigmoid_k = 10
+        sigmoid_k = 10
         C = 0.1
-        # sample_ratio = 0.6        
-        # num_tr_sample = X_train.shape[0]
-       
-        # flip_ratio = 0.1
-        # idxs = np.arange(y_train.shape[0])
-        # np.random.shuffle(idxs)
-        # num_flip = int(flip_ratio * len(idxs))
-        # y_train[idxs[:num_flip]] = np.logical_xor(np.ones(num_flip), y_train[idxs[:num_flip]]).astype(int)
+        sample_ratio = 0.6        
+        num_tr_sample = X_train.shape[0]
+        clf = LogisticRegression(C = C, fit_intercept=False, tol = 1e-8, solver="liblinear", multi_class="ovr", max_iter=100, warm_start=False, verbose=0)
 
+        # Counterfactual Generation Time
+        d = dice_ml.Data(dataframe = df, continuous_features = cols, outcome_name = 'target')
+        model = clf.fit(X_train,y_train)
+        y_pred = model.predict(X_va)
+        print("Recall Macro Score: ", recall_score(y_va, y_pred, average='macro'))
+        print("Precision Macro Score: ", precision_score(y_va, y_pred, average='macro'))
+        print("Roc-Auc Macro Score: ", roc_auc_score(y_va, y_pred, average='macro'))
 
-        clf = LogisticRegression(
-                C = C,
-                fit_intercept=False,
-                tol = 1e-8,
-                solver="liblinear",
-                multi_class="ovr",
-                max_iter=100,
-                warm_start=False,
-                verbose=0,
-                )
+        # df_cf = pd.DataFrame()
+        # m = dice_ml.Model(model=model, backend="sklearn")
+        # exp = dice_ml.Dice(d, m, method="random")
+        # e1 = exp.generate_counterfactuals(df1.loc[[0]], total_CFs=int(np.abs(zero_counts-one_counts)/10), desired_class="opposite")
+        # temp_df = e1.cf_examples_list[0].final_cfs_df
+        # df_cf = df_cf.append(temp_df)
+        # print(df_cf.values)
+        #print(df_cf.values[0][:-1])
+        # print(df_cf.values[0][-1])
+        
 
-        # clf.fit(X_train,y_train)
-        # y_va_pred = clf.predict_proba(X_va)[:,1]
-        # weight_ar = clf.coef_.flatten()
-        # test_grad_loss_val = grad_logloss_theta_lr(y_va,y_va_pred,X_va,weight_ar,C,False,0.1/(num_tr_sample*C))
-        # tr_pred = clf.predict_proba(X_train)[:,1]
-        # batch_size = 64
+        y_va_pred = clf.predict_proba(X_va)[:,1]
+        weight_ar = clf.coef_.flatten()
+        test_grad_loss_val = grad_logloss_theta_lr(y_va,y_va_pred,X_va,weight_ar,C,False,0.1/(num_tr_sample*C))
+        tr_pred = clf.predict_proba(X_train)[:,1]
+        batch_size = 64
 
-        # M = None
-        # total_batch = int(np.ceil(num_tr_sample / float(batch_size)))
-        # for idx in range(total_batch):
-        #     batch_tr_grad = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
-        #         tr_pred[idx*batch_size:(idx+1)*batch_size],
-        #         X_train[idx*batch_size:(idx+1)*batch_size],
-        #         weight_ar,
-        #         C,
-        #         False,
-        #         1.0)
+        M = None
+        total_batch = int(np.ceil(num_tr_sample / float(batch_size)))
+        for idx in range(total_batch):
+            batch_tr_grad = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
+                tr_pred[idx*batch_size:(idx+1)*batch_size],
+                X_train[idx*batch_size:(idx+1)*batch_size],
+                weight_ar,
+                C,
+                False,
+                1.0)
 
-        #     sum_grad = batch_tr_grad.multiply(X_train[idx*batch_size:(idx+1)*batch_size]).sum(0)
-        #     if M is None:
-        #         M = sum_grad
-        #     else:
-        #         M = M + sum_grad
+            sum_grad = batch_tr_grad.multiply(X_train[idx*batch_size:(idx+1)*batch_size]).sum(0)
+            if M is None:
+                M = sum_grad
+            else:
+                M = M + sum_grad
 
-        # M = M + 0.1/(num_tr_sample*C) * np.ones(X_train.shape[1])
-        # M = np.array(M).flatten()
-        # iv_hvp = inverse_hvp_lr_newtonCG(X_train,y_train,tr_pred,test_grad_loss_val,C,True,1e-5,True,M,0.1/(num_tr_sample*C))
-        # total_batch = int(np.ceil(X_train.shape[0] / float(batch_size)))
-        # predicted_loss_diff = []
+        M = M + 0.1/(num_tr_sample*C) * np.ones(X_train.shape[1])
+        M = np.array(M).flatten()
+        iv_hvp = inverse_hvp_lr_newtonCG(X_train,y_train,tr_pred,test_grad_loss_val,C,True,1e-5,True,M,0.1/(num_tr_sample*C))
+        total_batch = int(np.ceil(X_train.shape[0] / float(batch_size)))
+        predicted_loss_diff = []
 
-        # for idx in range(total_batch):
-        #     train_grad_loss_val = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
-        #         tr_pred[idx*batch_size:(idx+1)*batch_size],
-        #         X_train[idx*batch_size:(idx+1)*batch_size],
-        #         weight_ar,
-        #         C,
-        #         False,
-        #         1.0)
-        #     predicted_loss_diff.extend(np.array(train_grad_loss_val.dot(iv_hvp)).flatten())
+        for idx in range(total_batch):
+            train_grad_loss_val = batch_grad_logloss_lr(y_train[idx*batch_size:(idx+1)*batch_size],
+                tr_pred[idx*batch_size:(idx+1)*batch_size],
+                X_train[idx*batch_size:(idx+1)*batch_size],
+                weight_ar,
+                C,
+                False,
+                1.0)
+            predicted_loss_diff.extend(np.array(train_grad_loss_val.dot(iv_hvp)).flatten())
 
-        # predicted_loss_diffs = np.asarray(predicted_loss_diff)        
-        # phi_ar = - predicted_loss_diffs
-        # IF_interval = phi_ar.max() - phi_ar.min()
-        # a_param = sigmoid_k / IF_interval
-        # prob_pi = 1 / (1 + np.exp(a_param * phi_ar))
-        # pos_idx = select_from_one_class(y_train,prob_pi,1,sample_ratio)
-        # neg_idx = select_from_one_class(y_train,prob_pi,0,sample_ratio)
-        # sb_idx = np.union1d(pos_idx,neg_idx)
-        # sb_x_train = X_train[sb_idx]
-        # sb_y_train = y_train[sb_idx]
+        predicted_loss_diffs = np.asarray(predicted_loss_diff)        
+        phi_ar = - predicted_loss_diffs
+        IF_interval = phi_ar.max() - phi_ar.min()
+        a_param = sigmoid_k / IF_interval
+        prob_pi = 1 / (1 + np.exp(a_param * phi_ar))
+        pos_idx = select_from_one_class(y_train,prob_pi,1,sample_ratio)
+        neg_idx = select_from_one_class(y_train,prob_pi,0,sample_ratio)
+        sb_idx = np.union1d(pos_idx,neg_idx)
+        sb_x_train = X_train[sb_idx]
+        sb_y_train = y_train[sb_idx]
 
-        # clf.fit(sb_x_train,sb_y_train)
-        # y_va_pred = clf.predict_proba(X_va)[:,1]
+        clf.fit(sb_x_train,sb_y_train)
+        y_va_pred = clf.predict_proba(X_va)[:,1]
 
-        # neighborhood_data = neighborhood_data[sb_idx]
-        # labels_column = labels_column[sb_idx]
-        # weights = weights[sb_idx]
+        neighborhood_data = neighborhood_data[sb_idx]
+        labels_column = labels_column[sb_idx]
+        weights = weights[sb_idx]
 
         used_features = self.feature_selection(neighborhood_data,
                                                labels_column,
@@ -452,17 +471,13 @@ class LimeBase(object):
             y, sample_weight=weights)
 
         local_pred = easy_model.predict(neighborhood_data[0, used_features].reshape(1, -1))
-
-        print("Prediction Score: ", prediction_score)
-        print("Local Predictions: ", local_pred)
-
         if self.verbose:
             print('Intercept', easy_model.intercept_)
             print('Prediction_local', local_pred,)
-            print('Right:', neighborhood_labels[0, label])
+            print('Right:', neighborhood_labels[0, label])        
+        merged_list = [(used_features[i], easy_model.coef_[0][i]) for i in range(0, len(used_features))]
         return (easy_model.intercept_,
-                sorted(zip(used_features, easy_model.coef_),
-                       key=lambda x: np.abs(x[1]), reverse=True),
+                sorted(merged_list),
                 prediction_score, local_pred)
 
 
