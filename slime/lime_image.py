@@ -94,7 +94,7 @@ class LimeImageExplainer(object):
     feature that is 1 when the value is the same as the instance being
     explained."""
 
-    def __init__(self, kernel_width=.25, kernel=None, verbose=False,
+    def __init__(self, bbox_model, kernel_width=.25, kernel=None, verbose=False,
                  feature_selection='auto', random_state=None):
         """Init function.
 
@@ -124,6 +124,7 @@ class LimeImageExplainer(object):
         self.random_state = check_random_state(random_state)
         self.feature_selection = feature_selection
         self.base = lime_base.LimeBase(kernel_fn, verbose, random_state=self.random_state)
+        self.bbox_model = bbox_model
 
     def explain_instance(self, image, classifier_fn, labels=(1,),
                          hide_color=None,
@@ -218,6 +219,67 @@ class LimeImageExplainer(object):
              ret_exp.score[label],
              ret_exp.local_pred[label]) = self.base.explain_instance_with_data(
                 data, labels, distances, label, num_features,
+                model_regressor=model_regressor,
+                feature_selection=self.feature_selection)
+        return ret_exp
+
+    def if_explain_instance(self, image, classifier_fn, labels=(1,),
+                         hide_color=None,
+                         top_labels=5, num_features=100000, num_samples=1000,
+                         batch_size=10,
+                         segmentation_fn=None,
+                         distance_metric='cosine',
+                         model_regressor=None,
+                         random_seed=None,
+                         progress_bar=True):
+        if len(image.shape) == 2:
+            image = gray2rgb(image)
+        if random_seed is None:
+            random_seed = self.random_state.randint(0, high=1000)
+
+        if segmentation_fn is None:
+            segmentation_fn = SegmentationAlgorithm('quickshift', kernel_size=4,
+                                                    max_dist=200, ratio=0.2,
+                                                    random_seed=random_seed)
+        try:
+            segments = segmentation_fn(image)
+        except ValueError as e:
+            raise e
+
+        fudged_image = image.copy()
+        if hide_color is None:
+            for x in np.unique(segments):
+                fudged_image[segments == x] = (
+                    np.mean(image[segments == x][:, 0]),
+                    np.mean(image[segments == x][:, 1]),
+                    np.mean(image[segments == x][:, 2]))
+        else:
+            fudged_image[:] = hide_color
+
+        top = labels
+
+        data, labels = self.data_labels(image, fudged_image, segments,
+                                        classifier_fn, num_samples,
+                                        batch_size=batch_size,
+                                        progress_bar=progress_bar)
+
+        distances = sklearn.metrics.pairwise_distances(
+            data,
+            data[0].reshape(1, -1),
+            metric=distance_metric
+        ).ravel()
+
+        ret_exp = ImageExplanation(image, segments)
+        if top_labels:
+            top = np.argsort(labels[0])[-top_labels:]
+            ret_exp.top_labels = list(top)
+            ret_exp.top_labels.reverse()
+        for label in top:
+            (ret_exp.intercept[label],
+             ret_exp.local_exp[label],
+             ret_exp.score[label],
+             ret_exp.local_pred[label]) = self.base.if_explain_instance_with_data(
+                classifier_fn, data, labels, distances, label, num_features, num_samples,
                 model_regressor=model_regressor,
                 feature_selection=self.feature_selection)
         return ret_exp

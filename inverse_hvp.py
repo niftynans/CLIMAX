@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """Do inverse hessian-vector-product.
 """
-from optimize.optimize import fmin_ncg
+# import sys
+# sys.path.append('..')
+from CLIMAX.optimize.optimize import fmin_ncg
 # from scipy.optimize import fmin_ncg
 
 import pdb
 import time
 import numpy as np
-from grad_utils import grad_logloss_theta_lr, hessian_logloss_theta_lr, hessian_vector_product_lr
+from CLIMAX.grad_utils import grad_logloss_theta_lr, hessian_logloss_theta_lr, hessian_vector_product_lr
 
 def inverse_hvp_lissa(x_train,y_train,y_pred,v,
     batch_size=100,repeat=10,max_recursion_depth=10,
